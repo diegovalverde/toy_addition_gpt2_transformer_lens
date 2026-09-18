@@ -1,42 +1,24 @@
 import { useEffect, useState } from "react";
-import { Activity, ArrowRight, CircleCheck, CircleX, Sigma } from "lucide-react";
-import { ProbeRail } from "../components/ProbeRail";
-import { ScoreBars } from "../components/ScoreBars";
+import { Activity, CheckCircle2, CircleX, Sigma } from "lucide-react";
+import { ProbeRail, type LayerId } from "../components/ProbeRail";
 import { runProbes, type ProbeResult } from "../inference/browserRuntime";
 
-const DEFAULT_LEFT = "247";
-const DEFAULT_RIGHT = "586";
-const digits = Array.from({ length: 10 }, (_, index) => String(index));
+const winner = (scores: number[]) => scores.indexOf(Math.max(...scores));
+const carry = (value: number) => value === 1 ? "carry" : "no carry";
+type ProbeOutput = { name: string; value: string; expected: string; tone: "digit" | "carry" | "tens" };
 
-function winner(scores: number[]) { return scores.indexOf(Math.max(...scores)); }
-function reverseTokens(value: string) { return value.padStart(3, "0").split("").reverse().join(" "); }
+function ProbeOutputNode({ output }: { output: ProbeOutput }) {
+  const matches = output.value === output.expected;
+  return <div className={`probe-branch tone-${output.tone}`}><span className="branch-line" aria-hidden="true">→</span><div className="probe-node"><span>{output.name}</span><small>input [128 × 1]</small></div><span className="branch-arrow" aria-hidden="true">→</span><div className="probe-result"><strong>{output.value}</strong>{matches ? <CheckCircle2 className="result-good" size={19} aria-label="Matches arithmetic target" /> : <CircleX className="result-bad" size={19} aria-label="Does not match arithmetic target" />}<small>expected {output.expected}</small></div></div>;
+}
 
 export function App() {
-  const [left, setLeft] = useState(DEFAULT_LEFT); const [right, setRight] = useState(DEFAULT_RIGHT);
-  const [result, setResult] = useState<ProbeResult | null>(null); const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false); const [active, setActive] = useState("l0post");
-  useEffect(() => { const timer = window.setTimeout(async () => {
-    setLoading(true); const parsedLeft = Number(left), parsedRight = Number(right);
-    try { setResult(await runProbes(parsedLeft, parsedRight)); setError(null); } catch (caught) { setResult(null); setError(caught instanceof Error ? caught.message : "Could not run the probes."); }
-    setLoading(false);
-  }, 300); return () => window.clearTimeout(timer); }, [left, right]);
-
-  const digitPrediction = result ? winner(result.firstDigitScores) : null;
-  const carryPrediction = result ? winner(result.carryScores) : null;
-  const truthDigit = result ? (result.left + result.right) % 10 : null;
-  const truthCarry = result ? Number((result.left % 10) + (result.right % 10) >= 10) : null;
+  const [left, setLeft] = useState("247"), [right, setRight] = useState("586"), [result, setResult] = useState<ProbeResult | null>(null), [error, setError] = useState<string | null>(null), [loading, setLoading] = useState(false), [layer, setLayer] = useState<LayerId>("l0post"), [step, setStep] = useState<"tens" | "hundreds">("hundreds");
+  useEffect(() => { const timer = window.setTimeout(async () => { setLoading(true); try { setResult(await runProbes(Number(left), Number(right))); setError(null); } catch (caught) { setResult(null); setError(caught instanceof Error ? caught.message : "Could not run the probes."); } setLoading(false); }, 250); return () => window.clearTimeout(timer); }, [left, right]);
   const sum = result ? result.left + result.right : null;
-  return <main className="app-shell">
-    <header className="app-header"><div className="brand-block"><div className="brand-mark"><Sigma size={26} /></div><div><h1>Addition-GPT</h1><p>Probe Toy</p></div></div>
-      <div className="addition-form"><label>Three-digit addition prompt</label><div className="number-inputs"><input aria-label="First addend" value={left} inputMode="numeric" onChange={(e) => setLeft(e.target.value.replace(/\D/g, "").slice(0, 3))} /><span>+</span><input aria-label="Second addend" value={right} inputMode="numeric" onChange={(e) => setRight(e.target.value.replace(/\D/g, "").slice(0, 3))} /><ArrowRight size={19} /><output>{sum ?? "—"}</output></div>{error && <p className="input-error">{error}</p>}</div></header>
-    {loading && <p className="runtime-loading">Loading model assets and running layer-0 probes…</p>}
-    {result && <><section className="status-strip"><span title="Runs fully in this browser"><Activity size={15} /> Browser ONNX runtime</span><span>prompt: <code>&lt;bos&gt; {reverseTokens(left)} + {reverseTokens(right)} =</code></span><span className="status-good">layer-0 post residual</span></section>
-    <ProbeRail active={active} onSelect={setActive} />
-    <section className="main-grid"><div className="arithmetic-panel"><div className="panel-heading"><span className="eyebrow">Input columns</span><h2>What reaches the <code>=</code> token</h2></div><div className="column-table"><div className="column-label">hundreds</div><div className="column-label">tens</div><div className="column-label">units</div><div className="column-label equals">=</div>
-      {[result.left, result.right].map((value, row) => <div className="digit-row" key={row}>{String(value).padStart(3, "0").split("").map((digit, index) => <span key={index}>{digit}</span>)}<b>{row === 0 ? "+" : ""}</b></div>)}
-      <div className="sum-row">{String(sum).padStart(4, "0").split("").map((digit, index) => <span className={index === 3 ? "units-answer" : ""} key={index}>{digit}</span>)}</div></div>
-      <div className="residual-card"><span className="probe-module-label">blocks.0.hook_resid_post</span><strong>128-d residual at <code>=</code></strong><p>The probes read this state before the model produces its first answer token.</p></div></div>
-      <div className="side-stack"><section className="probe-card digit-card"><div className="card-title"><div><span className="eyebrow">Next-digit probe</span><h2>First answer digit</h2></div><span className="prediction-badge">{digitPrediction}</span></div><p>Predicts the units digit: <strong>{truthDigit}</strong> is the arithmetic target.</p><ScoreBars scores={result.firstDigitScores} selected={digitPrediction!} tone="digit" labels={digits} /><div className={`verdict ${digitPrediction === truthDigit ? "correct" : "incorrect"}`}>{digitPrediction === truthDigit ? <CircleCheck size={18} /> : <CircleX size={18} />} Probe predicts {digitPrediction} {digitPrediction === truthDigit ? "correctly" : `; target is ${truthDigit}`}</div></section>
-      <section className="probe-card carry-card"><div className="card-title"><div><span className="eyebrow">Carry probe</span><h2>Units carry-out</h2></div><span className="prediction-badge">{carryPrediction ? "carry" : "no carry"}</span></div><p>Will the units column write a carry into tens? Arithmetic target: <strong>{truthCarry ? "carry" : "no carry"}</strong>.</p><ScoreBars scores={result.carryScores} selected={carryPrediction!} tone="carry" labels={["no carry", "carry"]} /><div className={`verdict ${carryPrediction === truthCarry ? "correct" : "incorrect"}`}>{carryPrediction === truthCarry ? <CircleCheck size={18} /> : <CircleX size={18} />} Probe predicts {carryPrediction ? "carry" : "no carry"}</div></section></div></section></>}
-  </main>;
+  const unitsDigit = result ? winner(result.firstDigitScores) : 0, unitsCarry = result ? winner(result.carryScores) : 0, tensDigit = result ? winner(result.secondDigitScores) : 0, carryIn = result ? winner(result.secondCarryInScores) : 0, tensCarry = result ? winner(result.secondCarryOutScores) : 0;
+  const expectedUnits = result ? (result.left + result.right) % 10 : 0, expectedCarryIn = result ? Number(result.left % 10 + result.right % 10 >= 10) : 0, expectedTens = result ? Math.floor((result.left + result.right) / 10) % 10 : 0, expectedTensCarry = result ? Number(Math.floor((result.left + result.right) / 10) >= 10) : 0, expectedHundreds = result ? Math.floor((result.left + result.right) / 100) % 10 : 0, expectedHundredsCarry = result ? Number(Math.floor((result.left + result.right) / 1000) >= 1) : 0;
+  const outputs: ProbeOutput[] = layer === "l0post" ? [{ name: "Units digit probe", value: String(unitsDigit), expected: String(expectedUnits), tone: "digit" }, { name: "Units carry-out probe", value: carry(unitsCarry), expected: carry(expectedCarryIn), tone: "carry" }] : step === "tens" ? [{ name: "Tens digit probe", value: String(tensDigit), expected: String(expectedTens), tone: "tens" }, { name: "Units carry-in probe", value: carry(carryIn), expected: carry(expectedCarryIn), tone: "carry" }, { name: "Tens carry-out probe", value: carry(tensCarry), expected: carry(expectedTensCarry), tone: "carry" }] : [{ name: "Hundreds digit probe", value: String(winner(result!.thirdDigitScores)), expected: String(expectedHundreds), tone: "tens" }, { name: "Tens carry-in probe", value: carry(winner(result!.thirdCarryInScores)), expected: carry(expectedTensCarry), tone: "carry" }, { name: "Hundreds carry-out probe", value: carry(winner(result!.thirdCarryOutScores)), expected: carry(expectedHundredsCarry), tone: "carry" }];
+  return <main className="app-shell sketch-shell"><header className="app-header"><div className="brand-block"><div className="brand-mark"><Sigma size={26} /></div><div><h1>Addition-GPT</h1><p>Probe Toy</p></div></div><div className="addition-form"><label>Three-digit addition</label><div className="number-inputs"><input aria-label="First addend" value={left} inputMode="numeric" onChange={(event) => setLeft(event.target.value.replace(/\D/g, "").slice(0, 3))} /><span>+</span><input aria-label="Second addend" value={right} inputMode="numeric" onChange={(event) => setRight(event.target.value.replace(/\D/g, "").slice(0, 3))} /><span>=</span><output>{sum ?? "—"}</output></div>{error && <p className="input-error">{error}</p>}</div></header>
+    {loading && <p className="runtime-loading">Running probes…</p>}{result && <><div className="runtime-pill"><Activity size={16} /> Browser ONNX runtime</div><ProbeRail active={layer} onSelect={setLayer} prompt={`${result.left} + ${result.right}`} /><section className="flow-diagram"><div className="probe-source"><span className="source-arrow" aria-hidden="true">↓</span><p>{layer === "l0post" ? "Linear probes from the layer 0 post residual at =" : step === "tens" ? `Layer 1 post after units ${expectedUnits}` : `Layer 1 post after units ${expectedUnits} and tens ${expectedTens}`}</p>{layer === "l1post" && <div className="step-switch"><button className={step === "tens" ? "is-active" : ""} onClick={() => setStep("tens")} type="button">Tens step</button><button className={step === "hundreds" ? "is-active" : ""} onClick={() => setStep("hundreds")} type="button">Hundreds step</button></div>}</div><div className="probe-outputs">{outputs.map((output) => <ProbeOutputNode key={output.name} output={output} />)}</div></section></>}</main>;
 }

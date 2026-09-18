@@ -1,17 +1,12 @@
-const stages = [
-  { id: "input", label: "Input", note: "tokens", tone: "neutral" },
-  { id: "l0pre", label: "L0", note: "resid pre", tone: "neutral" },
-  { id: "l0post", label: "L0 post", note: "residual", tone: "active" },
-  { id: "digit", label: "Digit", note: "linear probe", tone: "digit" },
-  { id: "carry", label: "Carry", note: "linear probe", tone: "carry" },
-];
+const layers = [
+  { id: "l0post", title: "Layer 0 post", detail: "units digit · carry-out", selectable: true },
+  { id: "l1post", title: "Layer 1 post", detail: "tens / hundreds probes", selectable: true },
+  { id: "l2post", title: "Layer 2 post", detail: "no probes", selectable: false },
+  { id: "l3post", title: "Layer 3 post", detail: "no probes", selectable: false },
+] as const;
 
-export function ProbeRail({ active, onSelect }: { active: string; onSelect: (id: string) => void }) {
-  return <section className="probe-rail" aria-label="Addition transformer probe rail">
-    <div className="wire-field" aria-hidden="true"><span className="wire wire-digit" /><span className="wire wire-carry" /></div>
-    <div className="rail-track">{stages.map((stage, index) => <div className="rail-stage-wrap" key={stage.id}>
-      <button type="button" onClick={() => onSelect(stage.id)} className={`rail-stage tone-${stage.tone} ${active === stage.id ? "active" : ""}`}>{stage.label}</button>
-      <p>{stage.note}</p>{index < stages.length - 1 && <span className="rail-connector" />}
-    </div>)}</div>
-  </section>;
+export type LayerId = "l0post" | "l1post";
+
+export function ProbeRail({ active, onSelect, prompt }: { active: LayerId; onSelect: (id: LayerId) => void; prompt: string }) {
+  return <nav className="layer-selector" aria-label="Transformer layers"><div className="input-prompt">{prompt}</div><span className="path-arrow" aria-hidden="true">→</span><div className="layer-buttons">{layers.map((layer) => layer.selectable ? <button key={layer.id} type="button" onClick={() => onSelect(layer.id)} className={active === layer.id ? "is-active" : ""} aria-pressed={active === layer.id}><strong>{layer.title}</strong><small>{layer.detail}</small></button> : <div className="layer-disabled" key={layer.id} aria-label={`${layer.title}: ${layer.detail}`}><strong>{layer.title}</strong><small>{layer.detail}</small></div>)}</div></nav>;
 }

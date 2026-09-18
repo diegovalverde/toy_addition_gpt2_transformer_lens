@@ -11,6 +11,12 @@ export type ProbeResult = {
   right: number;
   firstDigitScores: number[];
   carryScores: number[];
+  secondDigitScores: number[];
+  secondCarryInScores: number[];
+  secondCarryOutScores: number[];
+  thirdDigitScores: number[];
+  thirdCarryInScores: number[];
+  thirdCarryOutScores: number[];
 };
 
 function softmax(scores: number[]) {
@@ -25,13 +31,14 @@ function toReversedDigits(value: number) {
 }
 
 function modelTokens(left: number, right: number) {
-  // <bos>, three least-significant-first digits, +, three digits, =
-  return [12, ...toReversedDigits(left), 10, ...toReversedDigits(right), 11];
+  // Teacher-force units and tens to reach the state used to predict hundreds.
+  const sum = left + right;
+  return [12, ...toReversedDigits(left), 10, ...toReversedDigits(right), 11, sum % 10, Math.floor(sum / 10) % 10];
 }
 
 async function session() {
   if (!sessionPromise) {
-    sessionPromise = ort.InferenceSession.create(`${BASE}model/addition-layer0-probes.onnx`, {
+    sessionPromise = ort.InferenceSession.create(`${BASE}model/addition-probes.onnx`, {
       executionProviders: ["wasm"],
     });
   }
@@ -54,5 +61,5 @@ export async function runProbes(left: number, right: number): Promise<ProbeResul
   const tokens = modelTokens(left, right);
   const input = new ort.Tensor("int64", BigInt64Array.from(tokens.map(BigInt)), [1, tokens.length]);
   const outputs = await runtime.run({ tokens: input });
-  return { left, right, firstDigitScores: softmax(output(outputs, "first_digit_logits")), carryScores: softmax(output(outputs, "carry_logits")) };
+  return { left, right, firstDigitScores: softmax(output(outputs, "first_digit_logits")), carryScores: softmax(output(outputs, "carry_logits")), secondDigitScores: softmax(output(outputs, "second_digit_logits")), secondCarryInScores: softmax(output(outputs, "second_carry_in_logits")), secondCarryOutScores: softmax(output(outputs, "second_carry_out_logits")), thirdDigitScores: softmax(output(outputs, "third_digit_logits")), thirdCarryInScores: softmax(output(outputs, "third_carry_in_logits")), thirdCarryOutScores: softmax(output(outputs, "third_carry_out_logits")) };
 }
